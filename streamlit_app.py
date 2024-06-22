@@ -1,40 +1,82 @@
-import altair as alt
-import numpy as np
-import pandas as pd
 import streamlit as st
+from newsapi import NewsApiClient
+from datetime import timedelta
 
-"""
-# Welcome to Streamlit!
+# Initialize the News API client
+newsapi = NewsApiClient(api_key=st.secrets['apikey'])
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+# Define cache with expiration time (1 hour)
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+def fetch_news(category, funding=False, india_only=False):
+    """ Fetch news based on the category, funding filter and India filter """
+    try:
+        if category.lower() == 'social impact tech':
+            query = "(social impact tech OR social innovation technology OR tech for good OR social entrepreneurship OR impact tech)"
+        elif category.lower() == 'edtech':
+            query = "(edtech OR education technology OR e-learning OR online education)"
+        else:
+            query = f"{category.lower()} startup"
+        
+        if funding:
+            query += " funding"
+        if india_only:
+            query += " India"
+        
+        all_articles = newsapi.get_everything(
+            q=query,
+            language='en',
+            sort_by='publishedAt',
+            page=1
+        )
+        return all_articles['articles']
+    except Exception as e:
+        st.error(f"Failed to fetch articles: {e}")
+        return []
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+def display_article(article):
+    """ Display a single article as a column in the grid """
+    if article['urlToImage']:
+        st.image(article['urlToImage'], width=300, use_column_width=True)
+    else:
+        st.image('https://via.placeholder.com/300', caption='No image available', use_column_width=True)
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+    st.subheader(article['title'])
+    st.markdown(f"[Read More]({article['url']})")
+    formatted_ist_date = article['publishedAt'].replace('T', ' ').replace('Z', '')
+    st.caption(f"Published At: {formatted_ist_date}")
+    st.write(f"Summary: {article['description']}")
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
+# Streamlit page configuration
+st.set_page_config(page_title="News Dashboard", layout="wide")
+st.title("Startup India News Dashboard")
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+try:
+    # Sidebar for category selection
+    st.sidebar.title("Filter Options")
+    category = st.sidebar.selectbox('Select a category:', ['-','Agritech','Fintech', 'Edtech', 'Healthtech', 'Social impact tech', 'AIC RMP'], index=0)
+    funding_filter = st.sidebar.checkbox("Include Funding News")
+    india_filter = st.sidebar.checkbox("India Only News")
+    
+    if category != '-':
+        articles = fetch_news(category, funding_filter, india_filter)
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+        if not articles:
+            st.warning("No articles found. Please try again later.")
+        
+        # Main grid display
+        for article in articles:
+            if '[Removed]' in article['title']:
+                continue
+            #get rid of duplicate titles
+            if article['title'] in st.session_state:
+                continue
+            
+            st.session_state[article['title']] = True
+            
+            st.container()
+            with st.expander(f"{article['title']}"):
+                display_article(article)
+
+except Exception as e:
+    st.error("An error occurred while loading the application.")
+    print(e)
