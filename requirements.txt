@@ -1,3 +1,2 @@
-altair
-pandas
+newsapi-python
 streamlit
